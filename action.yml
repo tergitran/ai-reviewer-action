@@ -1,0 +1,58 @@
+name: 'Security & AI Code Review'
+description: 'Automated secret scanning with Gitleaks and AI-powered PR code review via OpenRouter'
+author: 'Your Organization or Name'
+
+# -------------------------------------------------------------------
+# Action Inputs: Parameters passed by the caller repository
+# -------------------------------------------------------------------
+inputs:
+  openrouter-api-key:
+    description: 'OpenRouter API secret key for LLM code review'
+    required: true
+
+  openrouter-model:
+    description: 'AI model to use on OpenRouter'
+    required: false
+    default: 'deepseek/deepseek-chat'
+
+  base-ref:
+    description: 'Target branch to compare git diff against (e.g., main, staging)'
+    required: false
+    default: ${{ github.base_ref }}
+
+  gitleaks-license:
+    description: 'Gitleaks commercial license key (only required for GitHub Organizations)'
+    required: false
+    default: ''
+
+# -------------------------------------------------------------------
+# Execution Engine: Defines how the action runs
+# -------------------------------------------------------------------
+runs:
+  using: 'composite' # Composite action bundles multiple steps without Docker overhead
+  steps:
+    # Step 1: Scan for leaked credentials and API tokens
+    - name: Gitleaks Scan
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GITLEAKS_LICENSE: ${{ inputs.gitleaks-license }}
+
+    # Step 2: Prepare Node.js runtime for the review script
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+
+    # Step 3: Fetch target base branch and trigger AI review script
+    - name: Run AI Review
+      shell: bash # Required for composite action run steps
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        OPENROUTER_MODEL: ${{ inputs.openrouter-model }}
+      run: |
+        # Fetch the base branch from remote to enable git diff comparison
+        git fetch origin ${{ inputs.base-ref }}:${{ inputs.base-ref }}
+
+        # ${{ github.action_path }} points to the directory where this action files are located
+        node "${{ github.action_path }}/ai-review.mjs" "origin/${{ inputs.base-ref }}"
